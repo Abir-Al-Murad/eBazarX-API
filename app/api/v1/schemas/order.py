@@ -34,11 +34,16 @@ class OrderBase(BaseModel):
 
 class OrderCreate(OrderBase):
     items: List[OrderItemCreate]
+    payment_method: str = "cod"
     coupon_code: Optional[str] = None
     notes: Optional[str] = None
-
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+    
 class OrderUpdateStatus(BaseModel):
     status: OrderStatus
+
+    
 
 class OrderResponse(BaseModel):
     id: UUID
@@ -49,15 +54,22 @@ class OrderResponse(BaseModel):
     tax: Decimal
     discount_amount: Decimal
     grand_total: Decimal
-    payment_method: Optional[str]
+    payment_method: Optional[str] = None
     payment_status: PaymentStatus
     order_status: OrderStatus
-    tracking_number: Optional[str]
-    estimated_delivery: Optional[datetime]
-    notes: Optional[str]
-    coupon_id: Optional[UUID]
+    tracking_number: Optional[str] = None
+    estimated_delivery: Optional[datetime] = None
+    notes: Optional[str] = None
+    coupon_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+    
+    
+
+class OrderPlaceResponse(BaseModel):
+    order: OrderResponse
+    redirect_url: Optional[str] = None
+    payment_id: Optional[str] = None

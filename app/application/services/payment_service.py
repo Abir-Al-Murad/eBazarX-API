@@ -1,145 +1,159 @@
-from uuid import UUID
-from decimal import Decimal
 from datetime import datetime, timezone
+from decimal import Decimal
+from uuid import UUID
 from typing import Optional, Dict, Any
+import httpx
 from app.infrastructure.database.unit_of_work import UnitOfWork
 from app.core.exceptions import BusinessError
-from app.infrastructure.database.models import PaymentStatus, PaymentGateway, OrderStatus
+from app.infrastructure.database.models import OrderStatus, Payment, PaymentStatus, PaymentGateway, Order
+from app.core.config import settings
 
 class PaymentService:
     def __init__(self, uow: UnitOfWork):
         self.uow = uow
+        self.store_id = settings.SSLCOMMERZ_STORE_ID
+        self.store_pass = settings.SSLCOMMERZ_STORE_PASS.get_secret_value()
+        self.sandbox = settings.SSLCOMMERZ_SANDBOX_MODE
+
+        # SSLCommerz API endpoints
+        if self.sandbox:
+            self.init_url = "https://sandbox.sslcommerz.com/gwprocess/v4/api.php"
+            self.validation_url = "https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php"
+        else:
+            self.init_url = "https://secure.sslcommerz.com/gwprocess/v4/api.php"
+            self.validation_url = "https://secure.sslcommerz.com/validator/api/validationserverAPI.php"
 
     async def initiate_payment(
         self,
         order_id: UUID,
-        gateway: PaymentGateway,
-        success_url: Optional[str] = None,
-        cancel_url: Optional[str] = None
-    ):
-        # Fetch order
+        success_url: str,
+        cancel_url: str,
+        gateway: PaymentGateway = PaymentGateway.SSLCOMMERZ,
+    ) -> Dict[str, Any]:
+        """
+        Initiate SSLCommerz payment session.
+        Returns redirect_url and transaction_id.
+        """
         order = await self.uow.orders.get(order_id)
         if not order:
             raise BusinessError("Order not found")
-        if order.payment_status == PaymentStatus.PAID:
-            raise BusinessError("Order already paid")
 
-        # Create payment record
+        # Create a Payment record in pending state
         payment = await self.uow.payments.create(
             order_id=order_id,
             gateway=gateway,
             amount=order.grand_total,
             currency="BDT",
-            status=PaymentStatus.PENDING
+            status=PaymentStatus.PENDING,
         )
+        await self.uow.session.flush()   # get payment.id
 
-        # Call gateway (stubbed)
-        redirect_url = None
-        transaction_id = None
-        gateway_response = {}
+        # Prepare SSLCommerz post data
+        post_data = {
+            "store_id": self.store_id,
+            "store_passwd": self.store_pass,
+            "total_amount": str(order.grand_total),
+            "currency": "BDT",
+            "tran_id": f"EBZ-{order_id.hex[:8]}-{payment.id.hex[:4]}",
+            "success_url": f"{success_url}?payment_id={payment.id}&order_id={order_id}",
+            "fail_url": f"{cancel_url}?payment_id={payment.id}&order_id={order_id}",
+            "cancel_url": f"{cancel_url}?payment_id={payment.id}&order_id={order_id}",
+            "emi_option": 0,
+            "cus_name": "Customer",
+            "cus_email": "customer@example.com",
+            "cus_phone": "01700000000",
+            "cus_add1": "Dhaka",
+            "cus_city": "Dhaka",
+            "cus_country": "Bangladesh",
+            "shipping_method": "NO",
+            "product_name": "Order Items",
+            "product_category": "E-Commerce",
+            "product_profile": "general",
+        }
 
-        if gateway == PaymentGateway.SSLCOMMERZ:
-            transaction_id = f"SSL_{payment.id.hex[:8]}"
-            redirect_url = f"https://sandbox.sslcommerz.com/gwprocess/{transaction_id}"
-            gateway_response = {"init": "success"}
-        elif gateway == PaymentGateway.STRIPE:
-            transaction_id = f"pi_{payment.id.hex[:8]}"
-            redirect_url = f"https://checkout.stripe.com/{transaction_id}"
-            gateway_response = {"client_secret": "mock_secret"}
-        else:
-            # COD: no redirect, mark as pending
-            pass
+        # Send request to SSLCommerz
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.init_url, data=post_data)
+            result = response.json()
 
-        # Update payment
-        payment.transaction_id = transaction_id
-        payment.gateway_response = gateway_response
+        if result.get("status") != "SUCCESS":
+            # Mark payment as failed
+            payment.status = PaymentStatus.FAILED
+            await self.uow.commit()
+            raise BusinessError(f"SSLCommerz initiation failed: {result.get('failedreason', 'Unknown error')}")
+
+        # Save transaction ID (SSLCommerz session key)
+        payment.transaction_id = result.get("sessionkey") or result.get("tran_id")
+        payment.gateway_response = result
         await self.uow.commit()
         await self.uow.refresh(payment)
 
         return {
             "payment_id": payment.id,
             "order_id": order_id,
-            "gateway": gateway,
-            "redirect_url": redirect_url,
-            "transaction_id": transaction_id
+            "gateway": gateway.value,
+            "redirect_url": result.get("GatewayPageURL"),
+            "transaction_id": payment.transaction_id,
         }
 
-    async def handle_webhook(self, gateway: PaymentGateway, payload: Dict[str, Any]):
-        transaction_id: Optional[str] = None
-        new_status: Optional[PaymentStatus] = None
-        paid_at: Optional[datetime] = None
+    async def handle_webhook(self, payload: Dict[str, Any]) -> Payment:
+        """
+        Handle SSLCommerz success/fail/cancel callback (webhook or redirect).
+        """
+        val_id = payload.get("val_id")
+        tran_id = payload.get("tran_id")
+        status = payload.get("status")   # "VALID" or "FAILED"
+        amount = Decimal(payload.get("amount", 0))
 
-        if gateway == PaymentGateway.SSLCOMMERZ:
-            transaction_id = payload.get("tran_id")
-            status_str = payload.get("status")
-            if status_str == "VALID":
-                new_status = PaymentStatus.PAID
-                paid_at = datetime.now(timezone.utc)
-            else:
-                new_status = PaymentStatus.FAILED
+        if not val_id or not tran_id:
+            raise BusinessError("Missing validation parameters")
 
-        elif gateway == PaymentGateway.STRIPE:
-            event = payload
-            if event.get("type") == "checkout.session.completed":
-                transaction_id = event["data"]["object"]["id"]
-                new_status = PaymentStatus.PAID
-                paid_at = datetime.now(timezone.utc)
-            else:
-                new_status = PaymentStatus.FAILED
-
-        else:
-            raise BusinessError(f"Unsupported gateway: {gateway}")
-
-        if transaction_id is None:
-            raise BusinessError("Transaction ID missing in webhook")
-
-        payment = await self.uow.payments.get_by_transaction_id(transaction_id)
+        payment = await self.uow.payments.get_by_transaction_id(tran_id)
         if not payment:
-            raise BusinessError(f"Payment with transaction_id {transaction_id} not found")
+            raise BusinessError("Payment not found")
 
-        if new_status is not None:
-            payment.status = new_status
-        if paid_at is not None:
-            payment.paid_at = paid_at
-        payment.gateway_response = payload
+        # Verify payment with SSLCommerz validation API
+        async with httpx.AsyncClient() as client:
+            validation_params = {
+                "val_id": val_id,
+                "store_id": self.store_id,
+                "store_passwd": self.store_pass,
+                "format": "json",
+            }
+            resp = await client.get(self.validation_url, params=validation_params)
+            validation_data = resp.json()
+
+        if validation_data.get("status") != "VALID":
+            payment.status = PaymentStatus.FAILED
+            payment.gateway_response = validation_data
+            await self.uow.commit()
+            return payment
+
+        # Verify amount
+        if Decimal(validation_data.get("amount", 0)) != payment.amount:
+            payment.status = PaymentStatus.FAILED
+            payment.gateway_response = validation_data
+            await self.uow.commit()
+            raise BusinessError("Amount mismatch")
+
+        # Payment is valid
+        payment.status = PaymentStatus.PAID
+        payment.paid_at = datetime.now(timezone.utc)
+        payment.gateway_response = validation_data
+        await self.uow.commit()
+        await self.uow.refresh(payment)
 
         # Update order status
         order = await self.uow.orders.get(payment.order_id)
-        if order and new_status is not None:
-            order.payment_status = new_status
-            if new_status == PaymentStatus.PAID:
-                order.order_status = OrderStatus.PROCESSING
-                # Trigger seller wallet credit (via event later)
+        if order:
+            order.payment_status = PaymentStatus.PAID
+            order.order_status = OrderStatus.PROCESSING
+            await self.uow.commit()
 
-        await self.uow.commit()
-        await self.uow.refresh(payment)
         return payment
 
-    async def get_payment_status(self, payment_id: UUID):
+    async def get_payment_status(self, payment_id: UUID) -> Payment:
         payment = await self.uow.payments.get(payment_id)
         if not payment:
             raise BusinessError("Payment not found")
         return payment
-
-    async def request_refund(self, payment_id: UUID, amount: Decimal, reason: Optional[str] = None):
-        payment = await self.uow.payments.get(payment_id)
-        if not payment:
-            raise BusinessError("Payment not found")
-        if payment.status != PaymentStatus.PAID:
-            raise BusinessError("Payment not eligible for refund")
-
-        # Create refund record
-        refund = await self.uow.refunds.create(
-            payment_id=payment_id,
-            order_id=payment.order_id,
-            amount=amount,
-            reason=reason,
-            status="pending"
-        )
-
-        # In production, call gateway refund API
-        # For now, we'll just update status
-
-        await self.uow.commit()
-        await self.uow.refresh(refund)
-        return refund

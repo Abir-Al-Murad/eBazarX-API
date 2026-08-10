@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from uuid import UUID
-from app.api.v1.dependencies.auth import get_uow
+from app.api.v1.dependencies.auth import get_current_user, get_uow
 from app.api.v1.dependencies.permissions import get_current_customer
+from app.api.v1.dependencies.services import get_order_service
 from app.infrastructure.database.models import OrderStatus, User
 from app.infrastructure.database.unit_of_work import UnitOfWork
-from app.api.v1.schemas.order import OrderCreate, OrderResponse
+from app.api.v1.schemas.order import OrderCreate, OrderPlaceResponse, OrderResponse
 from app.application.services.order_service import OrderService
 
 router = APIRouter(
@@ -14,25 +15,28 @@ router = APIRouter(
     dependencies=[Depends(get_current_customer)]
 )
 
-@router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=OrderPlaceResponse)
 async def place_order(
-    data: OrderCreate,
-    current_user: User = Depends(get_current_customer),
-    uow: UnitOfWork = Depends(get_uow)
+    order_data: OrderCreate,
+    current_user=Depends(get_current_user),
+    order_service: OrderService = Depends(get_order_service),
 ):
-    service = OrderService(uow)
-    try:
-        order = await service.place_order(
-            user_id=current_user.id,
-            address_id=data.address_id,
-            items=[item.model_dump() for item in data.items],
-            coupon_code=data.coupon_code,
-            notes=data.notes
-        )
-        return order
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+    return await order_service.place_order(
+        user_id=current_user.id,
+        address_id=order_data.address_id,
+        items=[
+            {
+                "variant_id": item.variant_id,
+                "quantity": item.quantity,
+            }
+            for item in order_data.items
+        ],
+        payment_method=order_data.payment_method,
+        coupon_code=order_data.coupon_code,
+        notes=order_data.notes,
+        success_url=order_data.success_url,
+        cancel_url=order_data.cancel_url,
+    )
 @router.get("/", response_model=List[OrderResponse])
 async def list_my_orders(
     skip: int = 0,

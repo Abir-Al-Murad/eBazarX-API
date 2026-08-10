@@ -612,7 +612,7 @@ class Order(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     estimated_delivery: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     notes: Mapped[Optional[str]] = mapped_column(Text)
     coupon_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("coupons.id", ondelete="SET NULL"))
-
+    payment_intent_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     user = relationship("User", back_populates="orders")
     address = relationship("Address", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")

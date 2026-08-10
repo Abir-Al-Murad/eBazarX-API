@@ -15,6 +15,8 @@ from app.api.v1.routers.admin import reviews as admin_reviews
 from app.api.v1.routers.seller import seller as seller_router
 from app.api.v1.routers.admin import sellers as admin_sellers_router
 from app.api.v1.routers import users as public_users
+from app.api.v1.routers import payments_webhook
+
 # ---------------- Public ----------------
 from app.api.v1.routers.public import (
     auth,
@@ -174,6 +176,8 @@ app.include_router(coupons.router, prefix=API_PREFIX)
 app.include_router(banners.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(upload.router, prefix=API_PREFIX)
+
+app.include_router(payments_webhook.router, prefix=API_PREFIX)
 
 
 

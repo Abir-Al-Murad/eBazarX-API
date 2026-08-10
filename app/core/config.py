@@ -53,9 +53,11 @@ class Settings(BaseSettings):
     # Payment Gateways
     # ==========================================================
 
-    SSLCOMMERZ_STORE_ID: Optional[str] = None
-    SSLCOMMERZ_STORE_PASS: Optional[str] = None
+    SSLCOMMERZ_STORE_ID: str = Field(...)
+    SSLCOMMERZ_STORE_PASS: SecretStr = Field(...)
+    SSLCOMMERZ_BASE_URL: str = "https://sandbox.sslcommerz.com"
     STRIPE_SECRET_KEY: Optional[SecretStr] = None
+    SSLCOMMERZ_SANDBOX_MODE: bool = True   # ✅ ADD THIS
     BKAISH_API_KEY: Optional[SecretStr] = None  # ✅ Add for bKash
 
     # ==========================================================
@@ -83,6 +85,13 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: SecretStr = Field(...)
     CLOUDINARY_UPLOAD_FOLDER: str = "ebazar"
     MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024  # 5 MB
+
+
+
+    STRIPE_SECRET_KEY: Optional[SecretStr] = None
+    STRIPE_PUBLISHABLE_KEY: Optional[str] = None
+    
+    
 
 
 @lru_cache

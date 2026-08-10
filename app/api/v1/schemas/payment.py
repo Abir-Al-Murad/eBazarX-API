@@ -1,62 +1,42 @@
-from pydantic import BaseModel, ConfigDict, UUID4, Field
-from datetime import datetime
+from pydantic import BaseModel, UUID4
 from decimal import Decimal
-from typing import Any, Dict, Optional
-from uuid import UUID
+from typing import Optional
+from datetime import datetime
 from app.infrastructure.database.models import PaymentGateway, PaymentStatus
 
 class PaymentInitiateRequest(BaseModel):
     order_id: UUID4
-    gateway: PaymentGateway
-    success_url: Optional[str] = None
-    cancel_url: Optional[str] = None
-
+    gateway: PaymentGateway  # ✅ Add this field
+    success_url: str
+    cancel_url: str
 
 class PaymentInitiateResponse(BaseModel):
-    payment_id: UUID
-    order_id: UUID
+    payment_id: UUID4
+    order_id: UUID4
     gateway: PaymentGateway
-    redirect_url: Optional[str] = None
-    transaction_id: Optional[str] = None
-    
+    redirect_url: str
+    transaction_id: Optional[str]
 
 class PaymentResponse(BaseModel):
-    id: UUID
-    order_id: UUID
+    id: UUID4
+    order_id: UUID4
     gateway: PaymentGateway
     amount: Decimal
     currency: str
     transaction_id: Optional[str]
     status: PaymentStatus
     paid_at: Optional[datetime]
-    gateway_response: Optional[dict]
     created_at: datetime
     updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-class PaymentWebhookRequest(BaseModel):
-    gateway: PaymentGateway
-    payload: Dict[str, Any]
-
-class PaymentWebhookPayload(BaseModel):
-    order_id: UUID4
-    transaction_id: str
-    status: PaymentStatus
-    gateway_data: Optional[dict] = None
     
-class RefundRequest(BaseModel):
-    payment_id: UUID4
-    amount: Decimal
-    reason: Optional[str] = None
-
-class RefundResponse(BaseModel):
-    id: UUID
-    payment_id: UUID
-    order_id: UUID
-    amount: Decimal
-    reason: Optional[str]
-    status: str
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
+class PaymentWebhookPayload(BaseModel):
+    """SSLCommerz webhook/redirect payload."""
+    val_id: Optional[str] = None
+    tran_id: Optional[str] = None
+    status: Optional[str] = None
+    amount: Optional[str] = None
+    store_amount: Optional[str] = None
+    card_type: Optional[str] = None
+    card_no: Optional[str] = None
+    bank_tran_id: Optional[str] = None
+    # Add any other fields SSLCommerz sends

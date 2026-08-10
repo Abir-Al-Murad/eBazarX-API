@@ -1,3 +1,4 @@
+from celery import result
 from sqlalchemy import select
 from uuid import UUID
 from typing import Optional
@@ -10,5 +11,7 @@ class PaymentRepository(AsyncBaseRepository[Payment]):
         return result.scalar_one_or_none()
     
     async def get_by_transaction_id(self, transaction_id: str) -> Optional[Payment]:
-        result = await self.session.execute(select(Payment).filter(Payment.transaction_id == transaction_id))
+        result = await self.session.execute(
+        select(Payment).filter(Payment.transaction_id == transaction_id)
+        )
         return result.scalar_one_or_none()
