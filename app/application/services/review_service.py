@@ -291,6 +291,10 @@ class ReviewService:
             "size": limit,
             "pages": (total + limit - 1) // limit
         }
+        
+        # In app/application/services/review_service.py
+    async def get_user_review(self, user_id: UUID, product_id: UUID) -> Optional[Review]:
+        return await self.uow.reviews.get_by_user_and_product(user_id, product_id)
 
     # ============================
     # Public: Get Review Details

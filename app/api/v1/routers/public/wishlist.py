@@ -48,3 +48,22 @@ async def remove_from_wishlist(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return None
+
+
+@router.delete("/variant/{variant_id}")
+async def remove_from_wishlist_by_variant(
+    variant_id: UUID,
+    current_user: User = Depends(get_current_customer),
+    uow: UnitOfWork = Depends(get_uow)
+):
+    # Get the user's wishlist
+    wishlist = await uow.wishlists.get_by_user(current_user.id)
+    if not wishlist:
+        raise HTTPException(404, "Wishlist not found")
+    # Find the wishlist item with this variant
+    item = await uow.wishlist_items.get_by_wishlist_and_variant(wishlist.id, variant_id)
+    if not item:
+        raise HTTPException(404, "Item not found in wishlist")
+    await uow.wishlist_items.delete(item.id)
+    await uow.commit()
+    return {"message": "Removed from wishlist"}

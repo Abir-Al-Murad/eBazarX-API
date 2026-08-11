@@ -1,3 +1,5 @@
+from ast import stmt
+
 from sqlalchemy import select, func, and_, or_, desc, asc
 from uuid import UUID
 from typing import Optional, Sequence, Dict, List, Tuple
@@ -87,6 +89,18 @@ class ReviewRepository(AsyncBaseRepository[Review]):
         )
         total = (await self.session.execute(count_stmt)).scalar() or 0
         return items, total
+
+
+    async def get_by_user_and_product(self, user_id: UUID, product_id: UUID) -> Optional[Review]:
+        stmt = select(Review).filter(
+            Review.user_id == user_id,
+            Review.product_id == product_id,
+            Review.deleted_at.is_(None)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
 
     async def get_by_user_and_order(
         self,

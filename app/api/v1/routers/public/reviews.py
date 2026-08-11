@@ -33,6 +33,19 @@ async def create_review(
         return review
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+    
+@router.get("/product/{product_id}")
+async def get_my_review_for_product(
+    product_id: UUID,
+    current_user: User = Depends(get_current_customer),
+    uow: UnitOfWork = Depends(get_uow)
+):
+    service = ReviewService(uow)
+    review = await service.get_user_review(current_user.id, product_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="No review found for this product")
+    return review
 
 @router.put("/{review_id}", response_model=ReviewResponse)
 async def update_review(
