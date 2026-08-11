@@ -8,8 +8,12 @@ from app.infrastructure.database.models import Base
 
 config = context.config
 
-# Override URL from .env
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Use SYNC_DATABASE_URL for Alembic migrations
+if settings.SYNC_DATABASE_URL:
+    config.set_main_option(
+        "sqlalchemy.url",
+        settings.SYNC_DATABASE_URL.replace("%", "%%")
+    )
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -18,8 +22,10 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline():
+    url = settings.SYNC_DATABASE_URL
+
     context.configure(
-        url=settings.DATABASE_URL,
+        url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
