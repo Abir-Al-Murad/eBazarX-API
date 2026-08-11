@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 class CategoryBase(BaseModel):
     name: str = Field(..., max_length=255)
@@ -28,3 +28,15 @@ class CategoryResponse(CategoryBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class AdminCategoryResponse(CategoryResponse):
+    deleted_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class CategoryListFilter(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    parent_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    include_deleted: bool = False

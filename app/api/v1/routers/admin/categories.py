@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
 from app.api.v1.dependencies.auth import get_uow
@@ -12,6 +13,60 @@ router = APIRouter(
     dependencies=[Depends(get_current_admin)]
 )
 
+# ============================================================
+# GET: List all categories (with pagination & filters)
+# ============================================================
+@router.get("/", response_model=List[CategoryResponse])
+async def list_categories_admin(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    name: Optional[str] = None,
+    slug: Optional[str] = None,
+    parent_id: Optional[UUID] = None,
+    is_active: Optional[bool] = None,
+    include_deleted: bool = False,
+    uow: UnitOfWork = Depends(get_uow)
+):
+    """
+    Admin: List categories with filtering and pagination.
+    Can optionally include soft-deleted categories.
+    """
+    # Build filters
+    filters = {}
+    if name:
+        filters["name"] = name
+    if slug:
+        filters["slug"] = slug
+    if parent_id is not None:
+        filters["parent_id"] = parent_id
+    if is_active is not None:
+        filters["is_active"] = is_active
+    filters["include_deleted"] = include_deleted
+
+    categories, total = await uow.categories.get_all_admin(skip, limit, filters)
+    return categories
+
+# ============================================================
+# GET: Single category by ID
+# ============================================================
+@router.get("/{category_id}", response_model=CategoryResponse)
+async def get_category_admin(
+    category_id: UUID,
+    include_deleted: bool = False,
+    uow: UnitOfWork = Depends(get_uow)
+):
+    """
+    Admin: Get a single category by ID.
+    Optionally include soft-deleted categories.
+    """
+    category = await uow.categories.get_admin(category_id, include_deleted)
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return category
+
+# ============================================================
+# POST: Create a new category
+# ============================================================
 @router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_category(
     data: CategoryCreate,
@@ -19,17 +74,17 @@ async def create_category(
 ):
     # Validate parent existence (if provided)
     if data.parent_id:
-        parent = await uow.categories.get_parent(data.parent_id)
+        parent = await uow.categories.get(data.parent_id)
         if not parent:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail=f"Parent category with id {data.parent_id} not found"
             )
 
     # Check duplicate slug
     if await uow.categories.check_slug_exists(data.slug):
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=409,
             detail=f"Category with slug '{data.slug}' already exists"
         )
 
@@ -45,6 +100,9 @@ async def create_category(
     await uow.refresh(category)
     return category
 
+# ============================================================
+# PUT: Update an existing category
+# ============================================================
 @router.put("/{category_id}", response_model=CategoryResponse)
 async def update_category(
     category_id: UUID,
@@ -53,19 +111,19 @@ async def update_category(
 ):
     category = await uow.categories.get(category_id)
     if not category:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+        raise HTTPException(status_code=404, detail="Category not found")
 
     # Validate parent (if updating)
     if data.parent_id is not None:
         if data.parent_id == category_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail="Category cannot be its own parent"
             )
-        parent = await uow.categories.get_parent(data.parent_id)
+        parent = await uow.categories.get(data.parent_id)
         if not parent:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail=f"Parent category with id {data.parent_id} not found"
             )
 
@@ -73,7 +131,7 @@ async def update_category(
     if data.slug is not None:
         if await uow.categories.check_slug_exists(data.slug, exclude_id=category_id):
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                status_code=409,
                 detail=f"Category with slug '{data.slug}' already exists"
             )
 
@@ -86,6 +144,9 @@ async def update_category(
     await uow.refresh(category)
     return category
 
+# ============================================================
+# DELETE: Soft-delete a category
+# ============================================================
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
     category_id: UUID,
@@ -93,10 +154,9 @@ async def delete_category(
 ):
     category = await uow.categories.get(category_id)
     if not category:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+        raise HTTPException(status_code=404, detail="Category not found")
 
-    # Check if category has children (optional: prevent deletion if children exist)
-    # We could add a method in repository, but we'll keep it simple – soft delete only.
+    # Soft delete
     category.deleted_at = datetime.now(timezone.utc)
     await uow.commit()
     return None  # 204 No Content

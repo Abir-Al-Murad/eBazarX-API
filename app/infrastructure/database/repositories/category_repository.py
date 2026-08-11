@@ -1,7 +1,7 @@
-from typing import Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.infrastructure.database.models import Category
 from .base import AsyncBaseRepository
@@ -124,3 +124,65 @@ class CategoryRepository(AsyncBaseRepository[Category]):
         result = await self.session.execute(stmt)
 
         return result.scalar_one_or_none() is not None
+    
+    async def get_admin(self, id: UUID, include_deleted: bool = False) -> Optional[Category]:
+        """
+        Get a category by ID (admin version).
+        If include_deleted is True, returns soft-deleted categories as well.
+        """
+        stmt = select(Category).filter(Category.id == id)
+        if not include_deleted:
+            stmt = stmt.filter(Category.deleted_at.is_(None))
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_all_admin(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Sequence[Category], int]:
+        """
+        Admin: get categories with filters and pagination, optionally including soft-deleted.
+        Returns a tuple (items, total_count).
+        """
+        if filters is None:
+            filters = {}
+
+        # Build main query
+        stmt = select(Category)
+
+        # Filter soft-deleted
+        if not filters.get("include_deleted", False):
+            stmt = stmt.filter(Category.deleted_at.is_(None))
+
+        # Apply other filters
+        if filters.get("name"):
+            stmt = stmt.filter(Category.name.ilike(f"%{filters['name']}%"))
+        if filters.get("slug"):
+            stmt = stmt.filter(Category.slug.ilike(f"%{filters['slug']}%"))
+        if filters.get("parent_id") is not None:
+            stmt = stmt.filter(Category.parent_id == filters["parent_id"])
+        if filters.get("is_active") is not None:
+            stmt = stmt.filter(Category.is_active == filters["is_active"])
+
+        # Count total
+        count_stmt = select(func.count()).select_from(Category)
+        # Apply the same filters to the count query
+        if not filters.get("include_deleted", False):
+            count_stmt = count_stmt.filter(Category.deleted_at.is_(None))
+        if filters.get("name"):
+            count_stmt = count_stmt.filter(Category.name.ilike(f"%{filters['name']}%"))
+        if filters.get("slug"):
+            count_stmt = count_stmt.filter(Category.slug.ilike(f"%{filters['slug']}%"))
+        if filters.get("parent_id") is not None:
+            count_stmt = count_stmt.filter(Category.parent_id == filters["parent_id"])
+        if filters.get("is_active") is not None:
+            count_stmt = count_stmt.filter(Category.is_active == filters["is_active"])
+
+        total = (await self.session.execute(count_stmt)).scalar() or 0
+
+        # Order and paginate
+        stmt = stmt.order_by(Category.name).offset(skip).limit(limit)
+        result = await self.session.execute(stmt)
+        return result.scalars().all(), total
