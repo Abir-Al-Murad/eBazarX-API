@@ -117,3 +117,15 @@ class AuthenticatedUserProfileResponse(BaseModel):
     admin: Optional[AdminProfile] = None
 
     model_config = ConfigDict(from_attributes=True)
+    
+class RegistrationOTPRequest(UserCreate):
+    """Same as UserCreate, but used for requesting OTP."""
+    pass
+
+class RegistrationOTPResponse(BaseModel):
+    message: str
+    email: str
+    expires_in: int
+
+class UserRegisterWithOTP(UserCreate):
+    otp: str = Field(..., min_length=6, max_length=6)

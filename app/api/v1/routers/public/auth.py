@@ -1,6 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from app.api.v1.schemas.user import RefreshTokenRequest, UserCreate, Token, OTPVerifyRequest, OTPResendRequest
+from app.api.v1.schemas.user import (
+    RefreshTokenRequest,
+    UserCreate,
+    Token,
+    OTPVerifyRequest,
+    OTPResendRequest,
+    RegistrationOTPResponse,
+    UserRegisterWithOTP,
+)
 from app.application.services.auth_service import AuthService
 from app.core.exceptions import BusinessError
 from app.infrastructure.database.unit_of_work import UnitOfWork
@@ -9,13 +17,54 @@ from app.infrastructure.database.models import User
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# --- OTP ---
+# ============================================================
+# NEW Registration OTP Flow (Full Data First)
+# ============================================================
 
-@router.post("/request-otp")
-async def request_otp(
-    data: OTPResendRequest,  # using email field
+@router.post("/request-registration-otp", response_model=RegistrationOTPResponse)
+async def request_registration_otp(
+    data: UserCreate,
     auth_service: AuthService = Depends(get_auth_service),
 ):
+    """
+    Step 1: Validate full registration data and send OTP to email.
+    """
+    try:
+        result = await auth_service.request_registration_otp(data.model_dump())
+        return result
+    except BusinessError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/register")
+async def register_with_otp(
+    data: UserRegisterWithOTP,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """
+    Step 2: Verify OTP and create the user account.
+    """
+    try:
+        user = await auth_service.register_with_otp(data.model_dump())
+        return {"message": "User registered successfully", "user_id": str(user.id)}
+    except BusinessError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================
+# DEPRECATED OTP & Registration Endpoints (kept for backward compatibility)
+# ============================================================
+
+@router.post("/request-otp")
+async def request_otp_deprecated(
+    data: OTPResendRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """
+    DEPRECATED: Use /request-registration-otp instead.
+    """
     try:
         result = await auth_service.request_otp(data.email)
         return result
@@ -23,10 +72,13 @@ async def request_otp(
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/verify-otp")
-async def verify_otp(
+async def verify_otp_deprecated(
     data: OTPVerifyRequest,
     auth_service: AuthService = Depends(get_auth_service),
 ):
+    """
+    DEPRECATED: Use /register (with otp) instead.
+    """
     try:
         result = await auth_service.verify_otp(data.email, data.otp)
         return result
@@ -34,23 +86,27 @@ async def verify_otp(
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/resend-otp")
-async def resend_otp(
+async def resend_otp_deprecated(
     data: OTPResendRequest,
     auth_service: AuthService = Depends(get_auth_service),
 ):
+    """
+    DEPRECATED: Use /request-registration-otp instead.
+    """
     try:
         result = await auth_service.resend_otp(data.email)
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# --- Registration (after OTP verification) ---
-
-@router.post("/register")
-async def register_user(
+@router.post("/register-old")
+async def register_user_old(
     data: UserCreate,
     auth_service: AuthService = Depends(get_auth_service),
 ):
+    """
+    DEPRECATED: Use /register with OTP instead.
+    """
     try:
         user = await auth_service.register_user(
             email=data.email,
@@ -63,7 +119,9 @@ async def register_user(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# --- Login ---
+# ============================================================
+# Authentication (unchanged)
+# ============================================================
 
 @router.post("/login")
 async def login(
@@ -77,8 +135,6 @@ async def login(
     )
     return tokens
 
-# --- Logout ---
-
 @router.post("/logout")
 async def logout(
     request: RefreshTokenRequest,
@@ -90,8 +146,6 @@ async def logout(
         token_record.revoked = True
         await uow.commit()
     return {"message": "Logged out"}
-
-# --- Refresh ---
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
