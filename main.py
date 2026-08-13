@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -110,6 +111,21 @@ async def business_exception_handler(
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    if errors:
+        err = errors[0]
+        # Filter out 'body' from location parts to avoid 'body.password'
+        loc_parts = [str(loc) for loc in err['loc'] if str(loc) != 'body']
+        field = ".".join(loc_parts) if loc_parts else "Field"
+        msg = err['msg']
+        msg = msg[0].upper() + msg[1:] if msg else msg
+        message = f"{field}: {msg}"
+    else:
+        message = "Validation error"
+    return JSONResponse(status_code=422, content={"message": message})
+
 @app.exception_handler(Exception)
 async def global_exception_handler(
     request: Request,
@@ -178,6 +194,10 @@ app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(upload.router, prefix=API_PREFIX)
 
 app.include_router(payments_webhook.router, prefix=API_PREFIX)
+from app.api.v1.routers.seller import seller as seller_router
+
+app.include_router(seller_router.router, prefix=API_PREFIX)
+# app.include_router(pub, prefix=API_PREFIX)
 
 
 

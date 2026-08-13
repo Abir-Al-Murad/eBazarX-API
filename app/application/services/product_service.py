@@ -3,14 +3,11 @@ from typing import List, Optional
 from app.infrastructure.database.models import ProductApprovalStatus
 from app.infrastructure.database.unit_of_work import UnitOfWork
 from app.core.exceptions import BusinessError
-from app.domain.events import ProductApproved
-from app.domain.interfaces.event_bus import EventBus
 
 
 class ProductService:
-    def __init__(self, uow: UnitOfWork, event_bus: EventBus):
+    def __init__(self, uow: UnitOfWork):  # EventBus removed
         self.uow = uow
-        self.event_bus = event_bus
 
     async def create_product(self, seller_id: UUID, data):
         """
@@ -40,13 +37,11 @@ class ProductService:
 
         # 2. ⚠️ CRITICAL: Flush to assign product.id before using it as FK
         await self.uow.session.flush()
-        print("PRODUCT OBJECT:", product)
-        print("PRODUCT ID:", product.id)
 
         # 3. Now product.id is available — create variants
         for var_data in data.variants:
             await self.uow.variants.create(
-                product_id=product.id,      # Now valid
+                product_id=product.id,
                 sku=var_data.sku,
                 price_override=var_data.price_override,
                 stock=var_data.stock,
@@ -56,14 +51,12 @@ class ProductService:
 
         # 4. Create images — product.id is now valid
         for img_data in data.images:
-            image = await self.uow.product_images.create(
-                product_id=product.id,      # Now valid
+            await self.uow.product_images.create(
+                product_id=product.id,
                 url=img_data.url,
                 is_primary=img_data.is_primary,
                 sort_order=img_data.sort_order
             )
-            print("IMAGE OBJECT:", image.__dict__)
-            print("IMAGE ID:", image.id)
 
         # 5. Commit everything atomically
         await self.uow.commit()
@@ -81,11 +74,7 @@ class ProductService:
         product.approval_status = ProductApprovalStatus.APPROVED
         product.is_active = True
         await self.uow.commit()
-
-        # Publish event for asynchronous tasks (e.g., indexing, notifications)
-        await self.event_bus.publish(
-            ProductApproved(product_id=product.id, seller_id=product.seller_id)
-        )
+        # Event publishing removed (Celery/EventBus no longer used)
         await self.uow.refresh(product)
         return product
 
@@ -96,7 +85,6 @@ class ProductService:
             raise BusinessError("Product not found")
         product.approval_status = ProductApprovalStatus.REJECTED
         product.is_active = False
-        # Optionally store rejection reason in a separate field (if exists)
         await self.uow.commit()
         await self.uow.refresh(product)
         return product

@@ -1,10 +1,13 @@
+import uuid
+
+from click import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import UUID4
 from app.api.v1.dependencies.auth import get_current_user, get_uow
 from app.api.v1.dependencies.permissions import get_current_seller
-from app.api.v1.schemas.seller import SellerApplicationCreate, SellerApplicationResponse
+from app.api.v1.schemas.seller import PublicSellerProfileResponse, SellerApplicationCreate, SellerApplicationResponse, SellerProfileUpdate
 from app.application.services.seller_service import SellerService
-from app.infrastructure.database.models import OrderStatus, Seller, User
+from app.infrastructure.database.models import OrderStatus, Seller, SellerStatus, User
 from app.application.services.product_service import ProductService
 from app.api.v1.schemas.product import ProductCreate
 from app.api.v1.dependencies.services import get_order_item_repo, get_product_service
@@ -62,3 +65,55 @@ async def apply_seller(
         return seller
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+@router.get("/me", response_model=SellerApplicationResponse)
+async def get_my_seller_profile(
+    current_seller: Seller = Depends(get_current_seller),
+    uow: UnitOfWork = Depends(get_uow)
+):
+    """Get the authenticated seller's own profile."""
+    service = SellerService(uow)
+    seller = await service.get_seller_profile(current_seller.id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller profile not found")
+    return seller
+
+@router.put("/me", response_model=SellerApplicationResponse)
+async def update_my_seller_profile(
+    data: SellerProfileUpdate,
+    current_seller: Seller = Depends(get_current_seller),
+    uow: UnitOfWork = Depends(get_uow)
+):
+    """Update the authenticated seller's own profile."""
+    service = SellerService(uow)
+    # Only update allowed fields (exclude sensitive ones like status, commission_rate)
+    update_data = data.model_dump(exclude_unset=True)
+    # Ensure shop_slug uniqueness (if changed)
+    if "shop_slug" in update_data:
+        existing = await uow.sellers.get_by_slug(update_data["shop_slug"])
+        if existing and existing.id != current_seller.id:
+            raise HTTPException(status_code=409, detail="Shop slug already taken")
+    updated = await service.update_seller_profile(current_seller.id, update_data)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Seller profile not found")
+    return updated
+
+# ============================================================
+# PUBLIC SELLER PROFILE
+# ============================================================
+
+public_router = APIRouter(prefix="/public/sellers", tags=["Public Sellers"])
+    
+@public_router.get("/{seller_id}", response_model=PublicSellerProfileResponse)
+async def get_public_seller_profile(
+    seller_id: uuid.UUID,
+    uow: UnitOfWork = Depends(get_uow)
+):
+    """Publicly view a seller's shop profile."""
+    service = SellerService(uow)
+    seller = await service.get_seller_profile(seller_id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller not found")
+    if seller.status != SellerStatus.APPROVED:
+        raise HTTPException(status_code=404, detail="Shop not available")
+    return seller

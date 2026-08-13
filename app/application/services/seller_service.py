@@ -81,3 +81,9 @@ class SellerService:
 
     async def get_seller_by_user(self, user_id: UUID) -> Optional[Seller]:
         return await self.uow.sellers.get_by_user_id(user_id)
+    
+    async def get_seller_profile(self, seller_id: UUID) -> Optional[Seller]:
+        return await self.uow.sellers.get_by_id(seller_id)
+
+    async def update_seller_profile(self, seller_id: UUID, data: dict) -> Optional[Seller]:
+        return await self.uow.sellers.update(seller_id, **data)

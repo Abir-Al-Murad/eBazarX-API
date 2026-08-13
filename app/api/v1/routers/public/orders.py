@@ -37,6 +37,7 @@ async def place_order(
         success_url=order_data.success_url,
         cancel_url=order_data.cancel_url,
     )
+
 @router.get("/", response_model=List[OrderResponse])
 async def list_my_orders(
     skip: int = 0,
@@ -69,8 +70,15 @@ async def cancel_order(
         raise HTTPException(status_code=404, detail="Order not found")
     if order.order_status not in (OrderStatus.PENDING, OrderStatus.PROCESSING):
         raise HTTPException(status_code=400, detail="Order cannot be cancelled")
+
+    # ✅ Release reserved stock for each item
+    order_items = await uow.order_items.get_by_order(order_id)
+    for item in order_items:
+        variant = await uow.variants.get(item.variant_id)
+        if variant:
+            variant.reserved_stock -= item.quantity
+
     order.order_status = OrderStatus.CANCELLED
-    # Optionally release reserved stock
     await uow.commit()
     await uow.refresh(order)
     return order

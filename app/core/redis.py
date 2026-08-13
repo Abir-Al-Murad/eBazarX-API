@@ -1,8 +1,10 @@
-import redis.asyncio as redis
-
+import redis.asyncio as aioredis
 from app.core.config import settings
 
-redis_client = redis.from_url(
+# Create Redis connection pool
+redis_client = aioredis.from_url(
     settings.REDIS_URL,
+    encoding="utf-8",
     decode_responses=True,
+    max_connections=20,
 )

@@ -3,6 +3,7 @@ from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 from app.infrastructure.database.models import UserRole
+from app.core.config import settings
 
 # ----- Base schemas -----
 
@@ -11,6 +12,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     phone: str
     password: str = Field(..., min_length=8, max_length=72)
+    profile_image: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
@@ -44,6 +46,17 @@ class PublicUserProfileResponse(BaseModel):
     joined_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ----- OTP Schemas -----
+
+class OTPVerifyRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(..., min_length=settings.OTP_LENGTH, max_length=settings.OTP_LENGTH)
+
+
+class OTPResendRequest(BaseModel):
+    email: EmailStr
 
 
 # ----- Nested Shop Profile (for Seller) -----
@@ -80,8 +93,11 @@ class AdminProfile(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
 # ----- Authenticated Profile Response -----
 
 class AuthenticatedUserProfileResponse(BaseModel):

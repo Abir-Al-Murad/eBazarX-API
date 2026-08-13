@@ -73,3 +73,6 @@ class OrderPlaceResponse(BaseModel):
     order: OrderResponse
     redirect_url: Optional[str] = None
     payment_id: Optional[str] = None
+    
+class OrderUpdatePaymentStatus(BaseModel):
+    payment_status: PaymentStatus

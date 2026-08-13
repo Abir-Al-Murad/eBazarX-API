@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import select, func, update
 from uuid import UUID
 from typing import Optional, Sequence
 from app.infrastructure.database.models import Seller, SellerStatus
@@ -23,11 +23,15 @@ class SellerRepository(AsyncBaseRepository[Seller]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_id(self, seller_id: UUID) -> Optional[Seller]:
+        """Alias for get() – kept for clarity when used in service."""
+        return await self.get(seller_id)
+
     async def get_all(
         self,
         skip: int = 0,
         limit: int = 100,
-        status: Optional[SellerStatus] = None
+        status: Optional[SellerStatus] = None,
     ) -> Sequence[Seller]:
         stmt = select(Seller).filter(Seller.deleted_at.is_(None))
         if status is not None:
@@ -67,3 +71,9 @@ class SellerRepository(AsyncBaseRepository[Seller]):
             await self.session.commit()
             await self.session.refresh(seller)
         return seller
+
+
+    async def update(self, id: UUID, **kwargs) -> Optional[Seller]:
+        stmt = update(Seller).where(Seller.id == id).values(**kwargs).returning(Seller)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

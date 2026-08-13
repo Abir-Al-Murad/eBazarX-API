@@ -1,4 +1,3 @@
-from celery import result
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 

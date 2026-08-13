@@ -26,6 +26,11 @@ class Settings(BaseSettings):
 
     REDIS_URL: str
 
+
+    OTP_EXPIRE_SECONDS: int = 300  # 5 minutes
+    OTP_LENGTH: int = 6
+    OTP_RESEND_COOLDOWN: int = 60  # seconds
+
     # ==========================================================
     # RabbitMQ
     # ==========================================================
@@ -68,6 +73,12 @@ class Settings(BaseSettings):
     SMTP_PORT: Optional[int] = None
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[SecretStr] = None
+    
+    # ==========================================================
+     # OTP
+    # ==========================================================
+
+    OTP_LENGTH: int = 6                             
 
     # ==========================================================
     # Celery

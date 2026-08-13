@@ -27,7 +27,7 @@ class CartService:
             raise BusinessError("Variant not found")
         available = variant.stock - variant.reserved_stock
         if available < quantity:
-            raise InsufficientStockError("Not enough stock")
+            raise InsufficientStockError(f"Not enough stock. Available: {available}, Requested: {quantity}")
 
         # Check if item already in cart
         existing = await self.uow.cart_items.get_by_cart_and_variant(cart.id, variant_id)

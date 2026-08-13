@@ -11,7 +11,6 @@ router = APIRouter(prefix="/upload", tags=["Upload"])
 async def upload_image(
     file: UploadFile = File(...),
     folder: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
 ):
     """Upload an image to Cloudinary. Requires authentication."""
     try:
