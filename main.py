@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.exceptions import BusinessError
 from app.core.middleware.logging import LoggingMiddleware
-from app.core.redis import redis_client
 from app.api.v1.routers import reviews as customer_reviews, upload
 from app.api.v1.routers.seller import reviews as seller_reviews
 from app.api.v1.routers.public import reviews as public_reviews
@@ -64,32 +63,12 @@ from app.api.v1.routers.admin import (
 
 
 # =============================================================================
-# Lifespan
-# =============================================================================
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("Connecting Redis...")
-
-    try:
-        await redis_client.ping()
-        print("✅ Redis Connected")
-    except Exception as e:
-        print(f"❌ Redis not available: {e}")
-
-    yield
-
-    await redis_client.close()
-
-
-# =============================================================================
 # App
 # =============================================================================
 
 app = FastAPI(
     title="eBazar API",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 

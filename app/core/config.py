@@ -20,23 +20,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SYNC_DATABASE_URL: Optional[str] = None  # For Alembic
 
-    # ==========================================================
-    # Redis
-    # ==========================================================
-
-    REDIS_URL: str
 
 
     OTP_EXPIRE_SECONDS: int = 300  # 5 minutes
     OTP_LENGTH: int = 6
     OTP_RESEND_COOLDOWN: int = 60  # seconds
-
-    # ==========================================================
-    # RabbitMQ
-    # ==========================================================
-
-    RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672//"
-
     # ==========================================================
     # JWT
     # ==========================================================
@@ -68,31 +56,13 @@ class Settings(BaseSettings):
     # ==========================================================
     # Email
     # ==========================================================
-
-    SMTP_HOST: Optional[str] = None
-    SMTP_PORT: Optional[int] = None
-    SMTP_USER: Optional[str] = None
-    SMTP_PASSWORD: Optional[SecretStr] = None
     
     BREVO_API_KEY: SecretStr
     BREVO_FROM_EMAIL: str
     BREVO_FROM_NAME: str = "eBazar"
-    
-    
-    # ==========================================================
-     # OTP
-    # ==========================================================
-
-    OTP_LENGTH: int = 6                             
+                             
 
     
-    # ==========================================================
-    # Resend (Email)
-    # ==========================================================
-
-    RESEND_API_KEY: SecretStr = Field(...)
-    RESEND_FROM_EMAIL: str = "noreply@ebazar.com"
-
     # ==========================================================
     # Cloudinary
     # ==========================================================
@@ -103,9 +73,6 @@ class Settings(BaseSettings):
     CLOUDINARY_UPLOAD_FOLDER: str = "ebazar"
     MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024  # 5 MB
 
-
-
-    STRIPE_SECRET_KEY: Optional[SecretStr] = None
     STRIPE_PUBLISHABLE_KEY: Optional[str] = None
     
     
