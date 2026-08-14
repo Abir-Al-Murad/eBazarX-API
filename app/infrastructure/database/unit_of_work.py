@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database.models import (
+    OTP,
     Address,
     Banner,
     Brand,
@@ -50,6 +51,7 @@ from app.infrastructure.database.repositories import (
     notification_repository,
     order_item_repository,
     order_repository,
+    otp_repository,
     payment_repository,
     product_image_repository,
     product_repository,
@@ -82,6 +84,8 @@ class UnitOfWork:
 
 
         self.refresh_token = refresh_token_repository.RefreshTokenRepository(RefreshToken, session)
+        
+        self.otps = otp_repository.OTPRepository(OTP, session)
         # Auth & Users
         self.users = user_repository.UserRepository(User, session)
         self.sellers = seller_repository.SellerRepository(Seller, session)

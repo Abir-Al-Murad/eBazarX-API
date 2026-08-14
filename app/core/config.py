@@ -74,18 +74,24 @@ class Settings(BaseSettings):
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[SecretStr] = None
     
+    BREVO_API_KEY: SecretStr
+    BREVO_FROM_EMAIL: str
+    BREVO_FROM_NAME: str = "eBazar"
+    
+    
     # ==========================================================
      # OTP
     # ==========================================================
 
     OTP_LENGTH: int = 6                             
 
+    
     # ==========================================================
-    # Celery
+    # Resend (Email)
     # ==========================================================
 
-    CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    RESEND_API_KEY: SecretStr = Field(...)
+    RESEND_FROM_EMAIL: str = "noreply@ebazar.com"
 
     # ==========================================================
     # Cloudinary

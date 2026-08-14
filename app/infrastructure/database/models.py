@@ -889,3 +889,16 @@ class AuditLog(Base, UUIDMixin):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="audit_logs")
+    
+
+
+class OTP(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "otps"
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    otp: Mapped[str] = mapped_column(String(10), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        Index("idx_otp_email_expires", "email", "expires_at"),
+    )

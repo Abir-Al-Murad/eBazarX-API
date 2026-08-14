@@ -12,7 +12,6 @@ from app.core.security import (
 )
 from app.core.exceptions import BusinessError, ForbiddenError, UnauthorizedError
 from app.core.config import settings
-from app.core.cache.redis_service import redis_service
 from app.infrastructure.database.unit_of_work import UnitOfWork
 from app.infrastructure.database.models import User
 from app.core.email import email_service
@@ -90,6 +89,7 @@ class AuthService:
     async def request_registration_otp(self, user_data: dict) -> dict:
         """
         Step 1: Validate all registration data, then send OTP via email.
+        Raises HTTP 502 if the email service fails.
         """
         full_name = user_data.get("full_name")
         email = user_data.get("email")
@@ -117,15 +117,23 @@ class AuthService:
         if existing_phone:
             raise BusinessError("Phone already registered", status_code=409)
 
-        # Generate OTP and store in Redis
+        # Generate OTP and store in PostgreSQL
         otp = self._generate_otp()
-        key = f"registration_otp:{email}"
-        await redis_service.set(key, otp, ttl=self.otp_expiry_seconds)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.otp_expiry_seconds)
+        otp_record = await self.uow.otps.create_otp(email, otp, expires_at)
+        await self.uow.commit()
 
-        # Send OTP via email
-        success = email_service.send_otp_email(email, otp)
+        # Send OTP via email (async)
+        success = await email_service.send_otp_email(email, otp)
         if not success:
-            print(f"Failed to send OTP email to {email}. OTP: {otp}")
+            # Mark the OTP as used so it cannot be verified
+            await self.uow.otps.mark_used(otp_record.id)
+            await self.uow.commit()
+            # Raise an error so the API does not return 200 OK
+            raise BusinessError(
+                "Failed to send OTP email. Please try again later.",
+                status_code=502  # Bad Gateway
+            )
 
         return {
             "message": "OTP sent successfully",
@@ -166,16 +174,16 @@ class AuthService:
         if existing_phone:
             raise BusinessError("Phone already registered", status_code=409)
 
-        # Retrieve OTP from Redis
-        key = f"registration_otp:{email}"
-        stored_otp = await redis_service.get(key)
-        if not stored_otp:
+        # Retrieve latest valid OTP from PostgreSQL
+        otp_record = await self.uow.otps.get_latest_valid(email)
+        if not otp_record:
             raise BusinessError("OTP expired or not found", status_code=400)
-        if stored_otp != otp:
+        if otp_record.otp != otp:
             raise BusinessError("Invalid OTP", status_code=400)
 
-        # OTP is correct – delete it
-        await redis_service.delete(key)
+        # Mark OTP as used
+        await self.uow.otps.mark_used(otp_record.id)
+        await self.uow.commit()
 
         # Hash password and create user
         hashed_password = get_password_hash(password)
@@ -208,14 +216,26 @@ class AuthService:
             raise BusinessError("Phone already registered", status_code=409)
 
         otp = self._generate_otp()
-        key = f"otp:{identifier}"
-        await redis_service.set(key, otp, ttl=self.otp_expiry_seconds)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.otp_expiry_seconds)
+        otp_record = await self.uow.otps.create_otp(identifier, otp, expires_at)
+        await self.uow.commit()
 
         if "@" in identifier:
             try:
-                email_service.send_otp_email(identifier, otp)
+                success = await email_service.send_otp_email(identifier, otp)
+                if not success:
+                    await self.uow.otps.mark_used(otp_record.id)
+                    await self.uow.commit()
+                    raise BusinessError(
+                        "Failed to send OTP email. Please try again later.",
+                        status_code=502
+                    )
             except Exception as e:
-                print(f"Failed to send email: {e}. OTP: {otp}")
+                print(f"Failed to send email: {e}")
+                raise BusinessError(
+                    "Failed to send OTP email. Please try again later.",
+                    status_code=502
+                )
         else:
             print(f"SMS OTP for {identifier}: {otp}")
 
@@ -237,14 +257,26 @@ class AuthService:
             raise BusinessError("Phone already registered", status_code=409)
 
         otp = self._generate_otp()
-        key = f"otp:{identifier}"
-        await redis_service.set(key, otp, ttl=self.otp_expiry_seconds)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.otp_expiry_seconds)
+        otp_record = await self.uow.otps.create_otp(identifier, otp, expires_at)
+        await self.uow.commit()
 
         if "@" in identifier:
             try:
-                email_service.send_otp_email(identifier, otp)
+                success = await email_service.send_otp_email(identifier, otp)
+                if not success:
+                    await self.uow.otps.mark_used(otp_record.id)
+                    await self.uow.commit()
+                    raise BusinessError(
+                        "Failed to send OTP email. Please try again later.",
+                        status_code=502
+                    )
             except Exception as e:
-                print(f"Failed to send email: {e}. OTP: {otp}")
+                print(f"Failed to send email: {e}")
+                raise BusinessError(
+                    "Failed to send OTP email. Please try again later.",
+                    status_code=502
+                )
         else:
             print(f"SMS OTP for {identifier}: {otp}")
 
@@ -258,17 +290,15 @@ class AuthService:
         """
         DEPRECATED: Use register_with_otp instead.
         """
-        key = f"otp:{identifier}"
-        stored_otp = await redis_service.get(key)
-        if not stored_otp:
+        otp_record = await self.uow.otps.get_latest_valid(identifier)
+        if not otp_record:
             raise BusinessError("OTP expired or not found", status_code=400)
-        if stored_otp != otp:
+        if otp_record.otp != otp:
             raise BusinessError("Invalid OTP", status_code=400)
 
-        await redis_service.delete(key)
-        # Set a verified flag for backward compatibility
-        verified_key = f"verified:{identifier}"
-        await redis_service.set(verified_key, "true", ttl=600)
+        # Mark OTP as used
+        await self.uow.otps.mark_used(otp_record.id)
+        await self.uow.commit()
 
         return {
             "message": "OTP verified successfully",
@@ -295,10 +325,10 @@ class AuthService:
         if existing_phone:
             raise BusinessError("Phone already registered", status_code=409)
 
-        # Check if at least one identifier is verified
-        email_verified = await redis_service.exists(f"verified:{email}")
-        phone_verified = await redis_service.exists(f"verified:{phone}")
-        if not email_verified and not phone_verified:
+        # Check if at least one identifier is verified (using DB)
+        email_otp = await self.uow.otps.get_latest_valid(email)
+        phone_otp = await self.uow.otps.get_latest_valid(phone)
+        if not email_otp and not phone_otp:
             raise BusinessError(
                 "OTP verification required. Please verify your email or phone.",
                 status_code=400,
@@ -322,9 +352,12 @@ class AuthService:
         )
         await self.uow.commit()
 
-        # Clear verification flags
-        await redis_service.delete(f"verified:{email}")
-        await redis_service.delete(f"verified:{phone}")
+        # Mark OTP as used (for both email and phone if they exist)
+        if email_otp:
+            await self.uow.otps.mark_used(email_otp.id)
+        if phone_otp:
+            await self.uow.otps.mark_used(phone_otp.id)
+        await self.uow.commit()
 
         return user
 
