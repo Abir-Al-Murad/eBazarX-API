@@ -1,4 +1,5 @@
 from sqlalchemy import select, func, update
+from sqlalchemy.orm import selectinload  # ✅ Add this import
 from uuid import UUID
 from typing import Optional, Sequence
 from app.infrastructure.database.models import Seller, SellerStatus
@@ -24,8 +25,14 @@ class SellerRepository(AsyncBaseRepository[Seller]):
         return result.scalar_one_or_none()
 
     async def get_by_id(self, seller_id: UUID) -> Optional[Seller]:
-        """Alias for get() – kept for clarity when used in service."""
-        return await self.get(seller_id)
+        """Get seller by ID with user relationship loaded."""
+        stmt = (
+            select(Seller)
+            .filter(Seller.id == seller_id, Seller.deleted_at.is_(None))
+            .options(selectinload(Seller.user))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_all(
         self,
@@ -36,17 +43,19 @@ class SellerRepository(AsyncBaseRepository[Seller]):
         stmt = select(Seller).filter(Seller.deleted_at.is_(None))
         if status is not None:
             stmt = stmt.filter(Seller.status == status)
-        stmt = stmt.offset(skip).limit(limit)
+        stmt = stmt.options(selectinload(Seller.user)).offset(skip).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
     async def get_by_status(self, status: SellerStatus, skip: int = 0, limit: int = 100) -> Sequence[Seller]:
-        result = await self.session.execute(
+        stmt = (
             select(Seller)
             .filter(Seller.status == status, Seller.deleted_at.is_(None))
+            .options(selectinload(Seller.user))
             .offset(skip)
             .limit(limit)
         )
+        result = await self.session.execute(stmt)
         return result.scalars().all()
 
     async def count_all(self) -> int:
@@ -71,7 +80,6 @@ class SellerRepository(AsyncBaseRepository[Seller]):
             await self.session.commit()
             await self.session.refresh(seller)
         return seller
-
 
     async def update(self, id: UUID, **kwargs) -> Optional[Seller]:
         stmt = update(Seller).where(Seller.id == id).values(**kwargs).returning(Seller)

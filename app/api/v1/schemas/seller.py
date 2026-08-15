@@ -104,3 +104,34 @@ class PublicSellerProfileResponse(BaseModel):
     joined_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+    
+class SellerAdminDetailsResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    user_full_name: Optional[str] = None
+    user_email: Optional[str] = None
+    user_phone: Optional[str] = None
+    shop_name: str
+    shop_slug: str
+    description: Optional[str]
+    logo: Optional[str]
+    cover_image: Optional[str]
+    phone: Optional[str]
+    email: Optional[str]
+    address: Optional[str]
+    city: Optional[str]
+    district: Optional[str]
+    country: str
+    trade_license: Optional[str]
+    nid: Optional[str]
+    tin: Optional[str]
+    commission_rate: float
+    status: SellerStatus
+    average_rating: float
+    total_products: int
+    total_orders: int
+    joined_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
